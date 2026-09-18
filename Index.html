@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Dynamic Quiz from Google Sheets</title>
+<style>
+:root{--p:#46178f;--p2:#6f2dbd;--r:#e21b3c;--b:#1368ce;--y:#d89e00;--g:#26890c;--bg:#f5f4f9;--ink:#222}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:"Segoe UI","Roboto","Noto Sans",Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink)}
+button,input{font:inherit}
+.screen{display:none;min-height:100vh}.screen.active{display:flex}
+#startScreen,#resultScreen{align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#35106a,var(--p2))}
+.card{width:min(820px,95vw);background:#fff;border-radius:28px;padding:36px;box-shadow:0 25px 70px rgba(0,0,0,.28);text-align:center}
+.logo{font-size:64px;font-weight:900;color:var(--p)}
+.primary{border:0;border-radius:14px;background:var(--p);color:#fff;font-size:21px;font-weight:900;padding:15px 28px;cursor:pointer;box-shadow:0 5px 0 #2b0c5b}
+.primary[disabled]{opacity:.6;cursor:not-allowed}
+.status{margin-top:16px;font-weight:800}.error{color:var(--r)}.ok{color:var(--g)}
+
+#quizScreen{flex-direction:column}
+.top{min-height:76px;background:#fff;display:flex;align-items:center;gap:20px;padding:12px 22px;box-shadow:0 2px 14px #0001}
+.brand{font-size:23px;font-weight:900;color:var(--p)}
+.progw{flex:1}.plabel{text-align:center;font-weight:800;margin-bottom:5px}
+.prog{height:9px;background:#ece9f2;border-radius:10px;overflow:hidden}.prog>div{height:100%;background:var(--p);width:0;transition:.3s}
+.scorepill{background:#f0e8fb;color:var(--p);padding:10px 15px;border-radius:999px;font-weight:900;white-space:nowrap}
+
+.zone{flex:1;padding:20px;display:flex;flex-direction:column;gap:15px}
+.qmeta{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
+.badge{background:#eee8f8;color:var(--p);padding:7px 12px;border-radius:999px;font-weight:800;font-size:14px}
+.qcard{position:relative;min-height:230px;background:#fff;border-radius:20px;display:flex;align-items:center;justify-content:center;text-align:center;padding:28px 90px;box-shadow:0 8px 24px #0001}
+.qcontent{display:flex;align-items:center;justify-content:center;gap:28px;width:100%;max-width:1200px}
+.qtext{font-size:clamp(26px,3.8vw,52px);font-weight:900;line-height:1.15;flex:1}
+.qimagewrap{display:none;flex:0 0 min(34vw,360px)}
+.qimagewrap.show{display:block}
+.qimage{max-width:100%;max-height:260px;border-radius:16px;object-fit:contain;box-shadow:0 5px 16px #0002;background:#fafafa}
+.timer{position:absolute;left:18px;width:72px;height:72px;border-radius:50%;background:var(--p);color:#fff;display:grid;place-items:center;font-size:29px;font-weight:900}
+.timer.danger{background:var(--r)}
+
+.answers{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.ans{border:0;border-radius:18px;color:#fff;min-height:145px;display:flex;align-items:center;gap:20px;padding:20px 25px;cursor:pointer;box-shadow:0 6px 0 #0003}
+.shape{width:58px;font-size:45px;font-weight:900}.atxt{font-size:clamp(22px,2.7vw,38px);font-weight:900;text-align:left;line-height:1.15}
+.c0{background:var(--r)}.c1{background:var(--b)}.c2{background:var(--y)}.c3{background:var(--g)}
+.ans.correct{outline:7px solid #5df27b}.ans.wrong{outline:7px solid #ffb0bc}.ans.dim{opacity:.28}.answers.lock{pointer-events:none}
+
+.feedback{position:fixed;inset:0;background:#170d25d9;display:none;align-items:center;justify-content:center;z-index:30;padding:18px}
+.feedback.show{display:flex}
+.fb{width:min(720px,94vw);background:#fff;border-radius:26px;padding:34px;text-align:center;max-height:90vh;overflow:auto}
+.fbicon{font-size:68px}.fbtitle{font-size:38px;font-weight:900}.fbsub{font-size:19px;color:#555;margin-top:9px}
+.explain{margin-top:20px;padding:18px;background:#f7f3fc;border-radius:16px;text-align:left;display:none}
+.explain.show{display:block}.explain strong{color:var(--p);display:block;margin-bottom:8px}.explain div{line-height:1.5}
+
+.result-title{font-size:43px;color:var(--p);font-weight:900}.pct{font-size:82px;color:var(--p);font-weight:900}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 28px}
+.stat{background:#f5f1fb;border-radius:16px;padding:16px}.stat strong{font-size:30px;color:var(--p);display:block}
+.formbox{border-top:2px solid #eee;padding-top:24px;text-align:left}
+.field{margin-bottom:14px}.field label{display:block;font-weight:800;margin-bottom:6px}
+.field input{width:100%;padding:14px 15px;border:2px solid #ddd;border-radius:12px;font-size:17px}
+.submitrow{text-align:center;margin-top:18px}.note{font-size:13px;color:#777;margin-top:12px}
+
+@media(max-width:800px){
+ .top{height:auto;flex-wrap:wrap}.progw{order:3;flex-basis:100%}.zone{padding:12px}
+ .qcard{padding:85px 18px 22px;min-height:220px}.timer{left:50%;top:12px;transform:translateX(-50%);width:62px;height:62px}
+ .qcontent{flex-direction:column}.qimagewrap{flex:auto;width:100%}.qimage{max-height:220px}
+ .answers{grid-template-columns:1fr}.ans{min-height:105px}.stats{grid-template-columns:1fr}.card{padding:25px}
+}
+
+button,input,textarea,select{
+  font-family:"Segoe UI","Roboto","Noto Sans",Arial,Helvetica,sans-serif;
+}
+
+.connection-status{
+  display:inline-flex;align-items:center;justify-content:center;
+  margin:12px auto;padding:8px 14px;border-radius:999px;
+  font-size:14px;font-weight:600;background:#eee;color:#555;
+}
+.connection-status.ok{background:#e8f7ed;color:#137333}
+.connection-status.error{background:#fde8e8;color:#b42318}
+.connection-status.loading{background:#f1edff;color:#46178f}
+.connection-error{
+  max-width:620px;margin:10px auto;padding:14px 18px;border-radius:12px;
+  background:#fff3f2;border:1px solid #f5c2c0;color:#8b1e18;
+}
+.retry-btn{
+  margin-top:10px;border:0;border-radius:8px;padding:10px 16px;
+  cursor:pointer;font-weight:700;background:#46178f;color:#fff;
+}
+</style>
+</head>
+<body>
+
+<section id="startScreen" class="screen active">
+  <div class="card">
+    <div class="logo">QUIZ!</div>
+    <p>Toàn bộ nội dung được tải động từ Google Sheet.</p>
+    <button class="primary" id="loadBtn">TẢI CÂU HỎI</button>
+    <div class="status" id="loadStatus"></div>
+    <button class="primary" id="startBtn" style="display:none;margin-top:16px">BẮT ĐẦU</button>
+  </div>
+</section>
+
+<section id="quizScreen" class="screen">
+  <div class="top">
+    <div class="brand">QUIZ!</div>
+    <div class="progw">
+      <div class="plabel" id="plabel"></div>
+      <div class="prog"><div id="pbar"></div></div>
+    </div>
+    <div class="scorepill" id="scorepill">0 điểm</div>
+  </div>
+
+  <div class="zone">
+    <div class="qmeta">
+      <div class="badge" id="categoryBadge" style="display:none"></div>
+    </div>
+
+    <div class="qcard">
+      <div class="timer" id="timer">20</div>
+      <div class="qcontent">
+        <div class="qtext" id="qtext"></div>
+        <div class="qimagewrap" id="qimagewrap">
+          <img class="qimage" id="qimage" alt="Hình minh họa câu hỏi">
+        </div>
+      </div>
+    </div>
+
+    <div class="answers" id="answers"></div>
+  </div>
+</section>
+
+<div class="feedback" id="feedback">
+  <div class="fb">
+    <div class="fbicon" id="fbicon"></div>
+    <div class="fbtitle" id="fbtitle"></div>
+    <div class="fbsub" id="fbsub"></div>
+    <div class="explain" id="explainBox">
+      <strong>Giải thích đáp án</strong>
+      <div id="explainText"></div>
+    </div>
+  </div>
+</div>
+
+<section id="resultScreen" class="screen">
+  <div class="card">
+    <div class="result-title">Hoàn thành bài test!</div>
+    <div class="pct" id="pct">0%</div>
+    <div class="stats">
+      <div class="stat"><strong id="correctN">0</strong>Câu đúng</div>
+      <div class="stat"><strong id="wrongN">0</strong>Câu sai</div>
+      <div class="stat"><strong id="finalScore">0</strong>Điểm</div>
+    </div>
+
+    <div class="formbox">
+      <form id="resultForm" method="POST" target="submitFrame">
+        <div class="field"><label>Họ và tên</label><input name="name" id="name" required></div>
+        <div class="field"><label>Email</label><input name="email" id="email" type="email" required></div>
+
+        <input type="hidden" name="score" id="formScore">
+        <input type="hidden" name="correct" id="formCorrect">
+        <input type="hidden" name="wrong" id="formWrong">
+        <input type="hidden" name="percent" id="formPercent">
+        <input type="hidden" name="total" id="formTotal">
+        <input type="hidden" name="attemptId" id="attemptId">
+
+        <div class="submitrow"><button class="primary" id="submitBtn" type="submit">SUBMIT KẾT QUẢ</button></div>
+        <div class="status" id="submitMsg"></div>
+      </form>
+      <iframe name="submitFrame" style="display:none"></iframe>
+      <div class="note">Dán URL Web App Google Apps Script vào biến GOOGLE_SCRIPT_URL trong mã HTML.</div>
+    </div>
+  </div>
+</section>
+
+<script>
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyHvGfTx52SPITtx69tW1vkk2tujXeWWRH59arVHLW9JyVhjqzdgRciMh474NnAuoYCoQ/exec";
+const DEFAULT_TIME = 20;
+const FEEDBACK_DELAY = 2600;
+
+let quizData=[];
+const colors=["c0","c1","c2","c3"], shapes=["▲","◆","●","■"], letters=["A","B","C","D"];
+let qi=0,score=0,correctN=0,interval=null,timeLeft=0,locked=false;
+const $=id=>document.getElementById(id);
+
+function screen(id){
+  document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
+  $(id).classList.add("active");
+}
+
+function setStatus(text, type){
+  const el=document.getElementById("connectionStatus");
+  if(!el)return;
+  el.textContent=text;
+  el.className="connection-status "+(type||"");
+}
+function showConnectionError(message){
+  setStatus("Chưa kết nối được Google Sheet","error");
+  const box=document.getElementById("connectionError");
+  const msg=document.getElementById("connectionErrorText");
+  if(box && msg){
+    msg.textContent=message;
+    box.style.display="block";
+  }
+  const btn=document.getElementById("startBtn");
+  if(btn) btn.disabled=true;
+}
+function retryConnection(){
+  const box=document.getElementById("connectionError");
+  if(box) box.style.display="none";
+  quizData=[];
+  loadQuestions();
+}
+function loadQuestions(){
+  setStatus("Đang kết nối Google Sheet...", "loading");
+
+  // Remove an old JSONP callback/script if any.
+  const oldScript = document.getElementById("questionsJsonpScript");
+  if(oldScript) oldScript.remove();
+
+  window.receiveQuestions = function(data){
+    try{
+      if(!data || data.ok === false){
+        throw new Error((data && data.error) || "Google Apps Script không trả về dữ liệu hợp lệ.");
+      }
+
+      const rows = Array.isArray(data) ? data : (data.questions || data.data || []);
+      if(!Array.isArray(rows) || rows.length === 0){
+        throw new Error("Không tìm thấy câu hỏi trong Google Sheet.");
+      }
+
+      quizData = rows.sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0));
+      setStatus("Đã kết nối Google Sheet", "ok");
+      startBtn.disabled = false;
+      startBtn.textContent = "BẮT ĐẦU";
+    }catch(err){
+      showConnectionError(err.message || "Dữ liệu không hợp lệ.");
+    }finally{
+      const s=document.getElementById("questionsJsonpScript");
+      if(s) s.remove();
+    }
+  };
+
+  const s=document.createElement("script");
+  s.id="questionsJsonpScript";
+  s.async=true;
+  s.onerror=function(){
+    showConnectionError("Không thể truy cập Google Apps Script. Hãy kiểm tra quyền Web App và mạng Internet.");
+    s.remove();
+  };
+
+  const base=GOOGLE_SCRIPT_URL.replace(/\/+$/,"");
+  s.src=base+"?action=questions&callback=receiveQuestions&_="+Date.now();
+  document.head.appendChild(s);
+
+  // JSONP has no native timeout; give a clear message instead of hanging forever.
+  setTimeout(function(){
+    if(!quizData || quizData.length===0){
+      const active=document.getElementById("questionsJsonpScript");
+      if(active){
+        active.remove();
+        showConnectionError("Kết nối Google Script quá lâu hoặc bị mạng/firewall chặn.");
+      }
+    }
+  }, 15000);
+}
+
+function start(){
+  qi=0; score=0; correctN=0;
+  $("scorepill").textContent="0 điểm";
+  screen("quizScreen");
+  load();
+}
+
+function load(){
+  clearInterval(interval);
+  locked=false;
+  $("answers").classList.remove("lock");
+  $("feedback").classList.remove("show");
+  $("explainBox").classList.remove("show");
+
+  const q=quizData[qi];
+  $("qtext").textContent=q.question;
+  $("plabel").textContent=`Câu ${qi+1} / ${quizData.length}`;
+  $("pbar").style.width=`${(qi+1)/quizData.length*100}%`;
+
+  if(q.category){
+    $("categoryBadge").style.display="inline-block";
+    $("categoryBadge").textContent=q.category;
+  }else{
+    $("categoryBadge").style.display="none";
+  }
+
+  if(q.imageUrl){
+    $("qimagewrap").classList.add("show");
+    $("qimage").src=q.imageUrl;
+    $("qimage").onerror=()=>$("qimagewrap").classList.remove("show");
+  }else{
+    $("qimagewrap").classList.remove("show");
+    $("qimage").removeAttribute("src");
+  }
+
+  $("answers").innerHTML="";
+  q.answers.forEach((a,i)=>{
+    const b=document.createElement("button");
+    b.className=`ans ${colors[i]}`;
+    b.innerHTML=`<div class="shape">${shapes[i]}</div><div class="atxt">${letters[i]}. ${a}</div>`;
+    b.onclick=()=>choose(i,b);
+    $("answers").appendChild(b);
+  });
+
+  timeLeft=Number(q.time) > 0 ? Number(q.time) : DEFAULT_TIME;
+  $("timer").textContent=timeLeft;
+  $("timer").classList.remove("danger");
+
+  interval=setInterval(()=>{
+    timeLeft--;
+    $("timer").textContent=timeLeft;
+    if(timeLeft<=5)$("timer").classList.add("danger");
+    if(timeLeft<=0){
+      clearInterval(interval);
+      timeout();
+    }
+  },1000);
+}
+
+function choose(i,b){
+  if(locked)return;
+  locked=true;
+  clearInterval(interval);
+  $("answers").classList.add("lock");
+
+  const q=quizData[qi], bs=[...$("answers").children];
+
+  if(i===q.correct){
+    correctN++;
+    score += 1000 + Math.max(0,timeLeft)*10;
+    $("scorepill").textContent=`${score} điểm`;
+    b.classList.add("correct");
+    bs.forEach((x,j)=>{if(j!==q.correct)x.classList.add("dim")});
+    feedback(true,`Đáp án đúng: ${letters[q.correct]}. ${q.answers[q.correct]}`,q.explanation);
+  }else{
+    b.classList.add("wrong");
+    bs[q.correct].classList.add("correct");
+    bs.forEach((x,j)=>{if(j!==i&&j!==q.correct)x.classList.add("dim")});
+    feedback(false,`Đáp án đúng: ${letters[q.correct]}. ${q.answers[q.correct]}`,q.explanation);
+  }
+}
+
+function timeout(){
+  if(locked)return;
+  locked=true;
+  $("answers").classList.add("lock");
+  const q=quizData[qi],bs=[...$("answers").children];
+
+  bs.forEach((x,j)=>j===q.correct?x.classList.add("correct"):x.classList.add("dim"));
+
+  $("fbicon").textContent="⏰";
+  $("fbtitle").textContent="Hết giờ!";
+  $("fbtitle").style.color="#e21b3c";
+  $("fbsub").textContent=`Đáp án đúng: ${letters[q.correct]}. ${q.answers[q.correct]}`;
+
+  setExplanation(q.explanation);
+  $("feedback").classList.add("show");
+  setTimeout(next,FEEDBACK_DELAY);
+}
+
+function setExplanation(text){
+  if(text){
+    $("explainText").textContent=text;
+    $("explainBox").classList.add("show");
+  }else{
+    $("explainBox").classList.remove("show");
+    $("explainText").textContent="";
+  }
+}
+
+function feedback(ok,text,explanation){
+  $("fbicon").textContent=ok?"✓":"✕";
+  $("fbtitle").textContent=ok?"Chính xác!":"Chưa chính xác!";
+  $("fbtitle").style.color=ok?"#26890c":"#e21b3c";
+  $("fbsub").textContent=text;
+  setExplanation(explanation);
+  $("feedback").classList.add("show");
+  setTimeout(function(){
+    overlay.style.display="none";
+    if(qi >= quizData.length - 1){
+      results();
+    }else{
+      next();
+    }
+  }, FEEDBACK_DELAY);
+}
+
+function next(){
+  qi++;
+  qi>=quizData.length ? results() : load();
+}
+
+function results(){
+  document.getElementById("feedback").style.display="none";
+  clearInterval(interval);
+  screen("resultScreen");
+
+  const total=quizData.length;
+  const wrong=total-correctN;
+  const pct=Math.round(correctN/total*100);
+
+  $("pct").textContent=pct+"%";
+  $("correctN").textContent=correctN;
+  $("wrongN").textContent=wrong;
+  $("finalScore").textContent=score;
+
+  $("formScore").value=score;
+  $("formCorrect").value=correctN;
+  $("formWrong").value=wrong;
+  $("formPercent").value=pct;
+  $("formTotal").value=total;
+  $("attemptId").value=(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random().toString(36).slice(2));
+}
+
+$("resultForm").addEventListener("submit",function(e){
+  const url=GOOGLE_SCRIPT_URL.trim();
+  if(!url.startsWith("https://script.google.com/")){
+    e.preventDefault();
+    $("submitMsg").className="status error";
+    $("submitMsg").textContent="Chưa cấu hình URL Apps Script.";
+    return;
+  }
+
+  this.action=url;
+  $("submitBtn").disabled=true;
+  $("submitBtn").textContent="ĐANG GỬI...";
+
+  setTimeout(()=>{
+    $("submitMsg").className="status ok";
+    $("submitMsg").textContent="✓ Đã gửi kết quả.";
+    $("submitBtn").textContent="ĐÃ GỬI";
+  },1200);
+});
+
+$("loadBtn").onclick=loadQuestions;
+$("startBtn").onclick=start;
+</script>
+</body>
+</html>
