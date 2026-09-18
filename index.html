@@ -68,23 +68,6 @@ button,input{font:inherit}
 button,input,textarea,select{
   font-family:"Segoe UI","Roboto","Noto Sans",Arial,Helvetica,sans-serif;
 }
-
-.connection-status{
-  display:inline-flex;align-items:center;justify-content:center;
-  margin:12px auto;padding:8px 14px;border-radius:999px;
-  font-size:14px;font-weight:600;background:#eee;color:#555;
-}
-.connection-status.ok{background:#e8f7ed;color:#137333}
-.connection-status.error{background:#fde8e8;color:#b42318}
-.connection-status.loading{background:#f1edff;color:#46178f}
-.connection-error{
-  max-width:620px;margin:10px auto;padding:14px 18px;border-radius:12px;
-  background:#fff3f2;border:1px solid #f5c2c0;color:#8b1e18;
-}
-.retry-btn{
-  margin-top:10px;border:0;border-radius:8px;padding:10px 16px;
-  cursor:pointer;font-weight:700;background:#46178f;color:#fff;
-}
 </style>
 </head>
 <body>
@@ -186,81 +169,54 @@ function screen(id){
   $(id).classList.add("active");
 }
 
-function setStatus(text, type){
-  const el=document.getElementById("connectionStatus");
-  if(!el)return;
-  el.textContent=text;
-  el.className="connection-status "+(type||"");
-}
-function showConnectionError(message){
-  setStatus("Chưa kết nối được Google Sheet","error");
-  const box=document.getElementById("connectionError");
-  const msg=document.getElementById("connectionErrorText");
-  if(box && msg){
-    msg.textContent=message;
-    box.style.display="block";
-  }
-  const btn=document.getElementById("startBtn");
-  if(btn) btn.disabled=true;
-}
-function retryConnection(){
-  const box=document.getElementById("connectionError");
-  if(box) box.style.display="none";
-  quizData=[];
-  loadQuestions();
-}
 function loadQuestions(){
-  setStatus("Đang kết nối Google Sheet...", "loading");
+  const url=GOOGLE_SCRIPT_URL.trim();
+  if(!url.startsWith("https://script.google.com/")){
+    $("loadStatus").className="status error";
+    $("loadStatus").textContent="Chưa cấu hình GOOGLE_SCRIPT_URL.";
+    return;
+  }
 
-  // Remove an old JSONP callback/script if any.
-  const oldScript = document.getElementById("questionsJsonpScript");
-  if(oldScript) oldScript.remove();
+  $("loadBtn").disabled=true;
+  $("loadStatus").className="status";
+  $("loadStatus").textContent="Đang tải câu hỏi...";
 
-  window.receiveQuestions = function(data){
-    try{
-      if(!data || data.ok === false){
-        throw new Error((data && data.error) || "Google Apps Script không trả về dữ liệu hợp lệ.");
-      }
 
-      const rows = Array.isArray(data) ? data : (data.questions || data.data || []);
-      if(!Array.isArray(rows) || rows.length === 0){
-        throw new Error("Không tìm thấy câu hỏi trong Google Sheet.");
-      }
-
-      quizData = rows.sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0));
-      setStatus("Đã kết nối Google Sheet", "ok");
-      startBtn.disabled = false;
-      startBtn.textContent = "BẮT ĐẦU";
-    }catch(err){
-      showConnectionError(err.message || "Dữ liệu không hợp lệ.");
-    }finally{
-      const s=document.getElementById("questionsJsonpScript");
-      if(s) s.remove();
-    }
-  };
+  const old=document.getElementById("jsonpLoader");
+  if(old) old.remove();
 
   const s=document.createElement("script");
-  s.id="questionsJsonpScript";
-  s.async=true;
-  s.onerror=function(){
-    showConnectionError("Không thể truy cập Google Apps Script. Hãy kiểm tra quyền Web App và mạng Internet.");
-    s.remove();
+  s.id="jsonpLoader";
+  let finished=false;
+  const cleanup=()=>{ const el=document.getElementById("jsonpLoader"); if(el) el.remove(); };
+  const fail=(message)=>{
+    if(finished)return;
+    finished=true;
+    cleanup();
+    $("loadStatus").className="status error";
+    $("loadStatus").textContent=message;
+    $("loadBtn").disabled=false;
   };
-
-  const base=GOOGLE_SCRIPT_URL.replace(/\/+$/,"");
-  s.src=base+"?action=questions&callback=receiveQuestions&_="+Date.now();
-  document.head.appendChild(s);
-
-  // JSONP has no native timeout; give a clear message instead of hanging forever.
-  setTimeout(function(){
-    if(!quizData || quizData.length===0){
-      const active=document.getElementById("questionsJsonpScript");
-      if(active){
-        active.remove();
-        showConnectionError("Kết nối Google Script quá lâu hoặc bị mạng/firewall chặn.");
-      }
-    }
-  }, 15000);
+  s.src=url+"?action=questions&callback=receiveQuestions&_="+Date.now();
+  s.onerror=()=>{
+    fail("Không thể kết nối Google Apps Script. Hãy kiểm tra quyền Web App và URL /exec.");
+  };
+  window.receiveQuestions=function(payload){
+    if(finished)return;
+    finished=true;
+    cleanup();
+    try{
+      if(!payload || !payload.ok) throw new Error(payload?.error || "Google Apps Script trả về dữ liệu không hợp lệ.");
+      quizData=payload.questions || [];
+      if(!quizData.length) throw new Error("Sheet Questions chưa có câu hỏi hợp lệ.");
+      $("loadStatus").className="status ok";
+      $("loadStatus").textContent=`Đã tải ${quizData.length} câu hỏi.`;
+      $("startBtn").style.display="inline-block";
+      $("loadBtn").disabled=false;
+    }catch(err){ fail(err.message || "Không đọc được dữ liệu câu hỏi."); }
+  };
+  setTimeout(()=>{ if(!finished) fail("Quá thời gian chờ Google Apps Script (15 giây). Hãy kiểm tra quyền truy cập Web App."); },15000);
+  document.body.appendChild(s);
 }
 
 function start(){
@@ -381,7 +337,8 @@ function feedback(ok,text,explanation){
   setExplanation(explanation);
   $("feedback").classList.add("show");
   setTimeout(function(){
-    overlay.style.display="none";
+    $("feedback").classList.remove("show");
+    $("feedback").style.display="none";
     if(qi >= quizData.length - 1){
       results();
     }else{
