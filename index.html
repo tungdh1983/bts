@@ -6,17 +6,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Dynamic Quiz from Google Sheets</title>
 <style>
-:root{--p:#46178f;--p2:#6f2dbd;--r:#e21b3c;--b:#1368ce;--y:#d89e00;--g:#26890c;--bg:#f5f4f9;--ink:#222}
+:root{--p:#006b68;--p2:#005452;--r:#e21b3c;--b:#006b68;--y:#ffb71b;--g:#005452;--bg:#f3f7f6;--ink:#222}
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%;font-family:"Segoe UI","Roboto","Noto Sans",Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink)}
 button,input{font:inherit}
 .screen{display:none;min-height:100vh}.screen.active{display:flex}
-#startScreen,#resultScreen{align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#35106a,var(--p2))}
-.card{width:min(820px,95vw);background:#fff;border-radius:28px;padding:36px;box-shadow:0 25px 70px rgba(0,0,0,.28);text-align:center}
-.logo{font-size:64px;font-weight:900;color:var(--p)}
-.primary{border:0;border-radius:14px;background:var(--p);color:#fff;font-size:21px;font-weight:900;padding:15px 28px;cursor:pointer;box-shadow:0 5px 0 #2b0c5b}
+#startScreen,#resultScreen{align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#005452,#006b68)}
+.card{width:min(820px,95vw);background:#fff;border-radius:28px;padding:36px;box-shadow:0 25px 70px rgba(0,0,0,.28);text-align:center;border-top:6px solid #ffb71b}
+.logo{font-size:clamp(30px,5vw,48px);font-weight:900;color:var(--p);line-height:1.12;max-width:700px;margin:0 auto;letter-spacing:-.5px}
+.primary{border:0;border-radius:14px;background:#ffb71b;color:#005452;font-size:21px;font-weight:900;padding:15px 28px;cursor:pointer;box-shadow:0 5px 0 #c58c00}
 .primary[disabled]{opacity:.6;cursor:not-allowed}
-.status{margin-top:16px;font-weight:800}.error{color:var(--r)}.ok{color:var(--g)}
+.status{margin-top:16px;font-weight:800}.error{color:var(--r)}.ok{color:#005452}
 
 #quizScreen{flex-direction:column}
 .top{min-height:76px;background:#fff;display:flex;align-items:center;gap:20px;padding:12px 22px;box-shadow:0 2px 14px #0001}
@@ -74,11 +74,11 @@ button,input,textarea,select{
 
 <section id="startScreen" class="screen active">
   <div class="card">
-    <div class="logo">QUIZ!</div>
-    <p>Toàn bộ nội dung được tải động từ Google Sheet.</p>
-    <button class="primary" id="loadBtn">TẢI CÂU HỎI</button>
+    <div class="logo">MINIGAME TRƯỜNG ĐÀO TẠO<br>CÁN BỘ</div>
+    <p>Bấm nút bắt đầu để thực hiện</p>
+    <button class="primary" id="loadBtn">BẮT ĐẦU</button>
     <div class="status" id="loadStatus"></div>
-    <button class="primary" id="startBtn" style="display:none;margin-top:16px">BẮT ĐẦU</button>
+    <button class="primary" id="startBtn" style="display:none;margin-top:16px">TIẾP TỤC</button>
   </div>
 </section>
 
@@ -149,7 +149,7 @@ button,input,textarea,select{
         <div class="status" id="submitMsg"></div>
       </form>
       <iframe name="submitFrame" style="display:none"></iframe>
-      <div class="note">Dán URL Web App Google Apps Script vào biến GOOGLE_SCRIPT_URL trong mã HTML.</div>
+      <div class="note">Web App sử dụng JSONP để kết nối từ GitHub Pages. URL /exec phải để quyền truy cập “Bất kỳ ai”.</div>
     </div>
   </div>
 </section>
@@ -181,14 +181,22 @@ function loadQuestions(){
   $("loadStatus").className="status";
   $("loadStatus").textContent="Đang tải câu hỏi...";
 
-
+  // JSONP dùng tên callback duy nhất cho mỗi lần tải.
+  // Callback được đăng ký TRƯỚC khi gắn <script> để tránh mọi race-condition.
+  const callbackName="quizCallback_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
   const old=document.getElementById("jsonpLoader");
   if(old) old.remove();
 
-  const s=document.createElement("script");
-  s.id="jsonpLoader";
   let finished=false;
-  const cleanup=()=>{ const el=document.getElementById("jsonpLoader"); if(el) el.remove(); };
+  let timer=null;
+
+  const cleanup=()=>{
+    if(timer) clearTimeout(timer);
+    const el=document.getElementById("jsonpLoader");
+    if(el) el.remove();
+    try{ delete window[callbackName]; }catch(e){ window[callbackName]=undefined; }
+  };
+
   const fail=(message)=>{
     if(finished)return;
     finished=true;
@@ -197,28 +205,56 @@ function loadQuestions(){
     $("loadStatus").textContent=message;
     $("loadBtn").disabled=false;
   };
-  s.src=url+"?action=questions&callback=receiveQuestions&_="+Date.now();
-  s.onerror=()=>{
-    fail("Không thể kết nối Google Apps Script. Hãy kiểm tra quyền Web App và URL /exec.");
-  };
-  window.receiveQuestions=function(payload){
+
+  // Phải khai báo callback trước khi script từ Apps Script được append vào DOM.
+  window[callbackName]=function(payload){
     if(finished)return;
     finished=true;
-    cleanup();
+
     try{
-      if(!payload || !payload.ok) throw new Error(payload?.error || "Google Apps Script trả về dữ liệu không hợp lệ.");
-      quizData=payload.questions || [];
-      if(!quizData.length) throw new Error("Sheet Questions chưa có câu hỏi hợp lệ.");
+      if(!payload || !payload.ok){
+        throw new Error(payload?.error || "Google Apps Script trả về dữ liệu không hợp lệ.");
+      }
+
+      quizData=Array.isArray(payload.questions) ? payload.questions : [];
+      if(!quizData.length){
+        throw new Error("Sheet Questions chưa có câu hỏi hợp lệ.");
+      }
+
       $("loadStatus").className="status ok";
       $("loadStatus").textContent=`Đã tải ${quizData.length} câu hỏi.`;
-      $("startBtn").style.display="inline-block";
+
+      cleanup();
       $("loadBtn").disabled=false;
-    }catch(err){ fail(err.message || "Không đọc được dữ liệu câu hỏi."); }
+
+      // Tự động vào câu hỏi sau khi tải thành công.
+      start();
+    }catch(err){
+      cleanup();
+      $("loadStatus").className="status error";
+      $("loadStatus").textContent=err.message || "Không đọc được dữ liệu câu hỏi.";
+      $("loadBtn").disabled=false;
+    }
   };
-  setTimeout(()=>{ if(!finished) fail("Quá thời gian chờ Google Apps Script (15 giây). Hãy kiểm tra quyền truy cập Web App."); },15000);
+
+  const s=document.createElement("script");
+  s.id="jsonpLoader";
+  s.async=true;
+  s.onerror=()=>{
+    fail("Kết nối Web App thất bại khi tải JSONP. Web App đã truy cập được bằng trình duyệt, vì vậy hãy kiểm tra đúng URL /exec và tải lại trang GitHub Pages.");
+  };
+
+  const separator=url.includes("?") ? "&" : "?";
+  s.src=url+separator+
+        "action=questions&callback="+encodeURIComponent(callbackName)+
+        "&_="+Date.now();
+
+  timer=setTimeout(()=>{
+    fail("Google Apps Script không phản hồi JSONP trong 15 giây. Hãy tải lại trang và thử lại.");
+  },15000);
+
   document.body.appendChild(s);
 }
-
 function start(){
   qi=0; score=0; correctN=0;
   $("scorepill").textContent="0 điểm";
