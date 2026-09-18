@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>BTS MINI GAME</title>
+<title>Dynamic Quiz from Google Sheets</title>
 <style>
 :root{--p:#46178f;--p2:#6f2dbd;--r:#e21b3c;--b:#1368ce;--y:#d89e00;--g:#26890c;--bg:#f5f4f9;--ink:#222}
 *{box-sizing:border-box}
@@ -231,6 +231,7 @@ function load(){
   locked=false;
   $("answers").classList.remove("lock");
   $("feedback").classList.remove("show");
+  $("feedback").style.removeProperty("display");
   $("explainBox").classList.remove("show");
 
   const q=quizData[qi];
